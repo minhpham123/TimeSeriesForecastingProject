@@ -1,0 +1,705 @@
+---
+title: "Australian Beer Production Forecasting Model"
+author: "By : Minh Pham"
+date : "30 November 2021"
+output: 
+  pdf_document: 
+    latex_engine: xelatex
+---
+
+```{r, echo = FALSE, results="hide", warning=FALSE,message=FALSE}
+setwd('/Users/minhpham/Rstudio PSTAT')
+library(tsdl)
+library(MASS)
+library(ggplot2)
+library(ggfortify)
+library(forecast)
+source("plot.roots.R")
+```
+
+
+\newpage
+## Abstract :
+    
+  The main objective regarding this project was to achieve an accurate forecast of quarterly beer production in Australia with the usage of a time series dataset. The dataset selected proves to be interesting because of the fact that currently 85% of Australia's Beer production gets sold in Australia and it generates around $16 billion a year in economic activity. With the use of various statistical methods and applications such as box-cox and log transformations, seasonal and nonseasonal differencing, and the analysis of ACF and PACF plots, one is able to identify various candidate models.
+
+Through analysis of AIC, we were able to select two models that best fit the data: SARIMA(2,1,1)(0,1,2)s=4 model (A) and SARIMA(1,1,1)(0,1,2)s=4 model (B). They both passed diagnostic checking of roots for stationarity and invertibility. With the utilization of various tests such as Shaprio-Wilk test, Box-Pierce test, Ljung-Box test, and McLeod-Li test we were able to confirm independence, goodness of fit, and normality of their corresponding residuals. Both models passed these tests so they prove to both be good candidates for forecasting. However, we see that model B has a smaller p value (parsimony : AIC tends to overestimate p) so we select SARIMA(1,1,1)(0,1,2)s=4 to forecast the data 12 steps ahead and determine whether Australian beer production will increase or decrease in the future.
+
+## Introduction : 
+    
+  Australia's beer industry has a large impact on its own economy, it is estimated that \$16 billion dollars of Australia's economy is rooted in the beer industry. According to ACIL Allen Consulting, Economic Contribution of the Australian Brewing Industry 2018-19 from Producers to Consumers, March 2020, Australian-made beers contributed around $254 million to the ingredients and agriculture industry, \$582 million to the materials and packaging industry, \$281 million to the transport and freight industry, \$490 million to the marketing and sales industry and \$198 million to the administration industry. It provides numerous amounts of jobs for Australia's community, for each full-time job in beer making, on average there are 21.6 other jobs created in the economy. Through forecasting this data, we can determine whether the beer industry will still be prevalent in their production. 
+
+
+This dataset was obtained through the tsdl library which originated from the Australian Bureau of
+Statistics. It consists of 154 different quarterly observations ranging from March of 1956 to June of 1994. The data is presented in megalitres which is equivalent to 1000000 liters per. We were able to use r studio to produce the forecast and r markdown to create this report. The first step in the time series project was the splitting of the data into a test and training set to validate the forecast of the final model. Upon first view of the model with the use of visualization techniques such as time series plotting, it is clear that the variance could be reduced so box-cox and log transformations were used, then the variance between each model was compared and the lowest was selected ( the model with log transformation ). Afterwards, decomposition was applied to visualize that there is an apparent trend and seasonal component within the time series dataset so differencing at lags 1 to remove trend and lag 4 to remove seasonality was required since it is a quarterly dataset. Then, through analysis of the PACF and ACF graphs of the differenced model, candidate models were identified and the best models (SARIMA(2,1,1)(0,1,2)s=4 and SARIMA(1,1,1)(0,1,2)s=4) were chosen by comparing AIC values and choosing the ones with the lowest. After finding the best candidate models, diagnostic testing of the roots and residuals were done with plots and various tests to validate the models. Even though both models passed diagnostic testing, with the concept of parsimony (choose models with less parameters) we were able to determine that model B (SARIMA(1,1,1)(0,1,2)s=4) was the best model out of the two models because it has a lower p value than model A (SARIMA(2,1,1)(0,1,2)s=4). Then, a forecast of the model to see 12 steps ahead was preformed. From the forecast graph, it is clear that the test data lies within the confidence intervals so we conclude that the forecast is valid. In the end, with the given forecast we were able to conclude that the Australia's beer industry will continue to maintain or increase production which in return will maintain a positive impact on Australia's economy. 
+
+\newpage
+
+```{r, echo = FALSE, results="hide", warning=FALSE, message=FALSE}
+BeerProduction <- tsdl[[99]]
+length(BeerProduction) # 154 obs
+BeerProduction = BeerProduction[c(1:154)]
+Beer = BeerProduction[c(1:142)] # train set with 154 - 12 obs
+Beer.test = BeerProduction[c(143:154)] # test set wtih 12 obs
+```
+
+## Part 1 : Basic analysis 
+
+The first step in our project is to visualize the data to see if there are any apparent trends or seasonality and to determine if a transformation is needed.
+
+```{r, echo = FALSE}
+BeerProduction <- tsdl[[99]]
+BeerProduction = BeerProduction[c(1:154)]
+Beer = BeerProduction[c(1:142)] # train set with 154 - 12 obs
+Beer.test = BeerProduction[c(143:154)] # test set wtih 12 obs
+
+par(mfrow=c(1,2))
+Beer.ts = ts(Beer, frequency = 4, start = c(1956,1))
+plot.ts(Beer.ts)
+hist(Beer.ts) #histogram is slightly skewed so we try transformations 
+Acf(Beer.ts, lag.max = 40)
+Pacf(Beer.ts, lag.max = 40)
+```
+
+Initially, from the time series plot we can see that some sort of transformation is needed due to it not looking stationary (there is non constant mean and variance over time). Furthermore, from the histogram plot we see that it is slightly skewed and the ACF's remain large and periodic.
+
+
+## Decomposition and checking trend
+
+We can use the decompose function to split the time series data and visualize its various componenets such as, trend, seasonality, and stationarity. 
+
+```{r, echo = FALSE}
+y <- ts(as.ts(Beer), frequency = 4)
+decomp <- decompose(y)
+plot(decomp) # there is a trend + seasonal component
+```
+
+From the decomposition, we can clearly see that there is a trend and seasonal component as well. This would require us to difference the model at lag 4 since it is a quarterly seasonal component and lag 1 since there is a trend.
+
+\newpage
+
+
+
+## Part 2 : Transformations
+
+From the inital histogram of the time series data, we can see that it requires some sort of variance stabalization so we chose to do some transformations :
+
+We first check the value of lambda for the given model :
+
+```{r, echo = FALSE}
+bcTransform <- boxcox(Beer~ as.numeric(1:length(Beer.ts))) 
+```
+
+From this graph we can see that lambda's confidence interval contains 0 so we could also utilize log transformation as well as box-cox
+
+```{r, echo = FALSE}
+lambda <- bcTransform$x[which(bcTransform$y == max(bcTransform$y))]
+Beer.bc <-  (1/lambda)*(Beer^lambda-1)
+beer.log <- log(Beer)
+
+par(mfrow=c(1,3))
+hist(beer.log)
+hist(Beer.bc)
+hist(Beer.ts)
+print(paste0('beer.log var : ', var(beer.log)))
+print(paste0('beer.bc var : ', var(Beer.bc)))
+print(paste0('beer.ts var : ', var(Beer.ts)))
+
+# original log b/c variance is significantly lower
+```
+
+From the three histograms, we can see that they are all slightly skewed so instead we compare the variance of each one. From the variance we can see that the log transformed time series has a significantly lower variance than the other two, so we choose to use the log transformed model in our project. 
+
+\newpage
+
+## Part 3 : Differencing
+
+From the decomposition in part 1, we can see that the time series needs to be differenced at lags 4 and 1 to remove its seasonality and trend components.
+
+```{r, echo = FALSE}
+# remove seasonality
+Beer.d4 <- diff(beer.log, 4)
+print(paste0('beer differenced at lag 4 once var : ', var(Beer.d4)))
+Beer.d42 <- diff(Beer.d4, 4)
+print(paste0('beer differenced at lag 4 twice var : ', var(Beer.d42)))
+```
+
+Here we choose to only difference once at lag 4 since the data is quarterly and also when we difference it twice, the variance increases.
+
+```{r, echo = FALSE}
+Beer.d4d1 <- diff(Beer.d4, 1)
+print(paste0('beer differenced at lag 4 once and lag 1 once : ', var(Beer.d4d1)))
+Beer.d4d2 <- diff(Beer.d4d1,1)
+print(paste0('beer differenced at lag 4 once and lag 1 twice : ', var(Beer.d4d2)))
+```
+
+Similarly, we choose to only difference at lag 1 once because when we difference it twice, the variance increases. Eventhough, the variance increases when we differenced at lag 1 once, when we look at the time series plots and ACF graphs, we see that there is still a trend component when we only difference it at lag 4. Therefore, we still difference at lag 1 since it makes the model more stationary with only a small increase in variance.
+
+```{r, echo = FALSE}
+plot.ts(beer.log, main = 'log(Beer.ts) not differenced') 
+par(mfrow=c(1,2))
+plot.ts(Beer.d4, main = 'log(Beer.ts) diff at lag 4') 
+abline(h=mean(Beer.d4), col="blue")
+fitt <- lm(Beer.d4 ~ as.numeric(1:length(Beer.d4))); abline(fitt, col="red")
+
+
+plot.ts(Beer.d4d1, main = 'log(Beer.ts) diff at lag 4 and lag 1') 
+abline(h=mean(Beer.d4d1), col="blue")
+fitt <- lm(Beer.d4d1 ~ as.numeric(1:length(Beer.d4d1))); abline(fitt, col="red")
+
+```
+
+From the time series plots, we can see that seasonality component was removed when we differenced at lag 4 however, there was still a trend present. When we further differenced at lag 1, we see that the trend component has been removed. The data looks stationary, but we also need to check the ACF graphs as well. 
+
+```{r, echo = FALSE}
+Acf(beer.log,lag.max = 40)
+par(mfrow=c(1,2))
+Acf(Beer.d4,lag.max = 40)
+Acf(Beer.d4d1,lag.max = 40)
+```
+
+From the ACF graph of the undifferenced model we can clearly see that there is a slow decay with seasonality which indicates that it is nonstationarity. 
+
+Now, when looking at the second graph of the model differenced at lag 4, we can see that there is no more apparent seasonal component but however, there still seems to be a slow decay which indicates nonstationarity.
+
+Finally, when viewing the last graph, which is differenced at lags 4 and 1, we see that the ACF decay corresponds more to a stationary process. Therefore, we choose to work with the model that was differenced at lags 4 and 1.
+
+\newpage
+
+
+## Part 4 : ACF and PACF of differenced model :
+
+```{r, echo = FALSE}
+par(mfrow = c(1,2))
+Acf(Beer.d4d1, lag.max = 40)
+Pacf(Beer.d4d1, lag.max = 40)
+```
+
+From the ACF graph we can see significant lags at 3, 4, 8, 9, 10, 18, and 19.
+
+From the PACF graph we can see significant lags at 1, 2, 5, 6, 7, and 8
+
+Here some possible candidate models are : 
+
+s = 4, 
+
+D = 1, 
+
+d = 1,
+
+Q = 2, 
+
+P = 0, 
+
+q = 1, 3, 9, 10, 18, or 19
+
+p = 1,2,5,6, 7 or 8
+
+
+\newpage
+
+## Part 5 : Trying different models :
+
+```{r, echo = FALSE}
+arima(beer.log, order=c(1,1,1), seasonal = list(order = c(0,1,2), period = 4), method="ML")
+# - 503.88 
+arima(beer.log, order=c(2,1,1), seasonal = list(order = c(0,1,2), period = 4), method="ML")
+# - 504.93
+arima(beer.log, order=c(5,1,1), seasonal = list(order = c(0,1,2), period = 4), method="ML")
+# - 499.87
+arima(beer.log, order=c(6,1,1), seasonal = list(order = c(0,1,2), period = 4), method="ML")
+# - 501.59
+arima(beer.log, order=c(7,1,1), seasonal = list(order = c(0,1,2), period = 4), method="ML")
+# - 498.35
+arima(beer.log, order=c(8,1,1), seasonal = list(order = c(0,1,2), period = 4), method="ML")
+# -498.64
+arima(beer.log, order=c(1,1,3), seasonal = list(order = c(0,1,2), period = 4), method="ML")
+# - 502.69
+arima(beer.log, order=c(2,1,3), seasonal = list(order = c(0,1,2), period = 4), method="ML")
+# - 503.12
+arima(beer.log, order=c(5,1,3), seasonal = list(order = c(0,1,2), period = 4), method="ML")
+# - 498.82
+arima(beer.log, order=c(6,1,3), seasonal = list(order = c(0,1,2), period = 4), method="ML")
+# - 497.59
+arima(beer.log, order=c(7,1,3), seasonal = list(order = c(0,1,2), period = 4), method="ML")
+# - 496.41
+arima(beer.log, order=c(8,1,3), seasonal = list(order = c(0,1,2), period = 4), method="ML")
+# - 503.42
+
+```
+
+
+## Removing terms with 0 in their confidence intervals : 
+
+```{r, echo = FALSE}
+arima(beer.log, order=c(2,1,1), seasonal = list(order = c(0,1,2), period = 4), method="ML")
+# get rid of ar2 sma 2 and ma 1
+arima(beer.log, order=c(2,1,1), seasonal = list(order = c(0,1,2), period = 4), fixed = c(NA,0,0,NA,0), method="ML") # higher AIC so use original
+
+arima(beer.log, order=c(1,1,1), seasonal = list(order = c(0,1,2), period = 4), method="ML")
+# get rid of sma2
+arima(beer.log, order=c(1,1,1), seasonal = list(order = c(0,1,2), period = 4), fixed = c(NA,NA,NA,0), method="ML")
+
+```
+
+We would choose models SARIMA(2,1,1)(0,1,2)s=4 (Model A) and SARIMA(1,1,1)(0,1,2)s=4 (Model B) since they have the lowest AIC values.
+
+Now from model A, SARIMA(2,1,1)(0,1,2)s=4, we see that 0 lies within the confidence interval of ar2, sma1, and ma1. However, when they are set to 0, the AIC increases so the unfixed model is used instead.
+
+
+Now looking at model B, SARIMA(1,1,1)(0,1,2)s=4, we see that 0 lies within the confidence interval of sma2. When setting sma2 to 0, there is a decrease in the AIC so we use the model with sma2 being fixed to 0. 
+
+
+Models Chosen : 
+
+A : Log SARIMA(2,1,1)(0,1,2)s=4
+
+$$X_t(1+0.6835B+0.2851B^2)(1-B)(1-B^4) =  Z_t(1-0.285B)(1-0.6359B^4-0.1211B^8)$$
+$$\nabla_1\nabla_4ln(U_t)(1+0.6835B+0.2851B^2) = Z_t(1-0.285B)(1-0.6359B^4-0.1211B^8) $$
+
+B : Log SARIMA(1,1,1)(0,1,2)s=4 w/ sma2 being fixed to 0
+
+$$X_t(1+0.4085B)(1-B)(1-B^4) = Z_t(1-0.5325B)(1-0.7249B^4)$$
+$$\nabla_1\nabla_4ln(U_t)(1+0.4085B) = Z_t(1-0.5325B)(1-0.7249B^4)$$
+
+\newpage
+
+## Part 6 : Checking stationarity + invertibility
+## Check for roots Model A : SARIMA(2,1,1)(0,1,2)s=4 : 
+
+$$\nabla_1\nabla_4ln(U_t)(1+0.6835B+0.2851B^2) = Z_t(1-0.285B)(1-0.6359B^4-0.1211B^8)$$
+
+```{r, echo = FALSE}
+# Model SARIMA(2,1,1)(0,1,2)s=4
+plot.roots(NULL,polyroot(c(1, 0.6835, 0.2851)), main="roots of AR part, nonseasonal")
+print(paste0('root of MA part, nonseasonal : ', polyroot(c(1,-0.2875))))
+print(paste0('root of MA part, seasonal : ', polyroot(c(1,-0.6359,-0.1211))))
+
+## all outside unit circle therefore, Model A is invertible + stationary
+```
+
+
+From the plot we can see that the roots of the nonseasonal autoregressive component of model A is outside of the unit circle which means that it is stationary. Furthermore, from the polyroot function we see that the roots of the seasonal and nonseasonal moving average components of this model is also outside of the unit circle (|roots| > 1) meaning that it is also invertible.
+
+Therefore, we conclude that this model is both stationary and invertible and passed this portion of diagnostic testing. 
+
+\newpage
+
+## Check for roots Model B : SARIMA(1,1,1)(0,1,2)s=4 :
+
+$$\nabla_1\nabla_4ln(U_t)(1+0.4085B) = Z_t(1-0.5325B)(1-0.7249B^4)$$
+
+```{r, echo = FALSE}
+#Model SARIMA(1,1,1)(0,1,2)s=4
+print(paste0('root of AR part, nonseasonal : ', polyroot(c(1,0.4085))))
+plot.roots(NULL,polyroot(c(1,0.5325)), main= 'roots of MA part, nonseasonal')
+plot.roots(NULL,polyroot(c(1,-0.7249)), main= 'roots of MA part, seasonal')
+# stationary + non invertible
+
+```
+
+From the polyroot function we see that the roots of the nonseasonal AR component of model B lie outside of the unit circle (|root| > 1) which means that we can conclude that this model is stationary. Furthermore, we can also conclude that it is invertible because we see that the roots from the seasonal and nonseasonal MA components are outside the unit circle.
+
+
+Therefore, we conclude that this model is stationary and invertible. 
+
+\newpage 
+
+## Part 7 : Diagnostic testing 
+## Diagnostic testing:  Model A : SARIMA(2,1,1)(0,1,2)s=4 
+
+```{r, echo = FALSE}
+fit <- arima(beer.log, order=c(2,1,1), seasonal = list(order = c(0,1,2), period = 4), method="ML")
+res <- residuals(fit)
+plot.ts(res)
+fitt <- lm(res ~ as.numeric(1:length(res))); abline(fitt, col="red")
+abline(h=mean(res), col="blue")
+par(mfrow = c(1,2))
+
+hist(res,density=20,breaks=20, col="blue", xlab="", prob=TRUE)
+m <- mean(res)
+std <- sqrt(var(res))
+curve( dnorm(x,m,std), add=TRUE )
+qqnorm(res,main= "Normal Q-Q Plot for Model B")
+qqline(res,col="blue")
+```
+
+From the time series plot, we can see close to no change in variance, no seasonality, no trend, and the sample mean lies very close to 0 so it resembles white noise. From the histogram and normal QQ plot, we see that the residuals also closely follow a normal distribution.
+
+
+
+```{r, echo = FALSE}
+par(mfrow = c(1,2))
+acf(res, lag.max = 40)
+pacf(res, lag.max = 40)
+```
+
+When looking at the ACF and PACF graphs of the residuals, one can see that there are no significant lags and that all of them lie within the confidence interval so they could be counted as 0. This confirms that the residuals resemble a white noise distribution.
+
+```{r, echo = FALSE}
+shapiro.test(res)
+Box.test(res, lag = 12, type = c("Box-Pierce"), fitdf = 2)
+Box.test(res, lag = 12, type = c("Ljung-Box"), fitdf = 2)
+Box.test((res)^2, lag = 12, type = c("Ljung-Box"), fitdf = 0)
+```
+
+For the Shapiro-Wilk test, this model obtained a p-value of 0.8149 which is above our 0.05 p-value threshold. Therefore, we don't reject the null hypothesis of the shapiro-wilk test and conclude that the residuals of the model follow a normal distribution.
+
+For the other 3 portmanteau tests we see similar results so we would not reject the null hypothesis for any of them. We conclude that the residuals does not show non-linear dependence and follow a gaussian WN(0,1).
+
+```{r, echo = FALSE}
+ar(res, aic = TRUE, order.max = NULL, method = c("yule-walker"))
+```
+
+Additionally, r automatically selected order 0 for the residuals so we can conclude that it is in fact an AR(0) model which is white noise.
+
+
+
+This model passed every diagnostic test so it is a prime candidate for forecasting.
+
+
+
+\newpage
+
+## Diagnostic testing:  Model B : SARIMA(1,1,1)(0,1,2)s=4
+
+```{r, echo = FALSE}
+fit <- arima(beer.log, order=c(1,1,1), seasonal = list(order = c(0,1,2), period = 4), fixed = c(NA,NA,NA,0), method="ML")
+res <- residuals(fit)
+
+plot.ts(res)
+fitt <- lm(res ~ as.numeric(1:length(res))); abline(fitt, col="red")
+abline(h=mean(res), col="blue")
+
+
+par(mfrow = c(1,2))
+
+hist(res,density=20,breaks=20, col="blue", xlab="", prob=TRUE)
+m <- mean(res)
+std <- sqrt(var(res))
+curve( dnorm(x,m,std), add=TRUE )
+abline(h=mean(res), col="blue")
+qqnorm(res,main= "Normal Q-Q Plot for Model B")
+qqline(res,col="blue")
+```
+
+From the time series plot, we can see close to no change in variance, no seasonality, no trend, and the sample mean lies very close to 0 so it resembles white noise. From the normal QQ plot and histogram, we see that the residuals also closely follow a normal distribution.
+
+
+```{r, echo = FALSE}
+par(mfrow = c(1,2))
+acf(res, lag.max = 40)
+pacf(res, lag.max = 40)
+```
+
+When looking at the ACF and PACF graphs of the residuals, one can see that there are no significant lags and that all of them lie within the confidence interval so they can be counted as 0. This confirms that the residuals resembles a white noise distribution.
+
+
+```{r, echo = FALSE}
+shapiro.test(res)
+Box.test(res, lag = 12, type = c("Box-Pierce"), fitdf = 4)
+Box.test(res, lag = 12, type = c("Ljung-Box"), fitdf = 4)
+Box.test(res^2, lag = 12, type = c("Ljung-Box"), fitdf = 0)
+```
+
+For the Shapiro-Wilk test, this model obtained a p-value of 0.5631 which is above our 0.05 p-value threshold. Therefore, we don't reject the null hypothesis of the shapiro-wilk test and conclude that the residuals of the model follow a normal distribution.
+
+For the other 3 portmanteau tests we see similar results so we would not reject the null hypothesis for any of them. We conclude that the residuals does not show non-linear dependence and follow a gaussian WN(0,1).
+
+```{r, echo = FALSE}
+ar(res, aic = TRUE, order.max = NULL, method = c("yule-walker"))
+```
+
+Additionally, r automatically selected order 0 for the residuals so we can conclude that it is in fact an AR(0) model which is white noise.
+
+This model passed every diagnostic test so it is a prime candidate for forecasting.
+
+Here, we would choose to forecast model B since, model B has a lower p value than model A and the principle of parsimony states that the model with fewer parameters is better.
+
+\newpage
+
+
+## Part 8 : Forcasting Model B
+
+```{r, echo = FALSE}
+fit.A <- arima(beer.log, order=c(1,1,1), seasonal = list(order = c(0,1,2), period = 4), fixed = c(NA,NA,NA,0), method="ML")
+pred.tr <- predict(fit.A, n.ahead = 12)
+U.tr= pred.tr$pred + 2*pred.tr$se # upper bound for prediction
+L.tr= pred.tr$pred - 2*pred.tr$se # lower bound
+ts.plot(beer.log, xlim=c(1,length(beer.log)+12), ylim = c(min(beer.log),max(U.tr)))
+lines(U.tr, col="blue", lty="dashed")
+lines(L.tr, col="blue", lty="dashed")
+points((length(beer.log)+1):(length(beer.log)+12), pred.tr$pred, col="red")
+```
+
+```{r, echo = FALSE}
+pred.orig <- exp(pred.tr$pred)
+U= exp(U.tr)
+L= exp(L.tr)
+ts.plot(Beer, xlim=c(1,length(Beer)+12), ylim = c(min(Beer),max(U)))
+lines(U, col="blue", lty="dashed")
+lines(L, col="blue", lty="dashed")
+points((length(Beer)+1):(length(Beer)+12), pred.orig, col="red")
+```
+
+```{r, echo = FALSE}
+ts.plot(Beer, xlim = c(100,length(Beer)+12), ylim = c(250,max(U)))
+lines(U, col="blue", lty="dashed")
+lines(L, col="blue", lty="dashed")
+points((length(Beer)+1):(length(Beer)+12), pred.orig, col="red")
+```
+
+```{r, echo = FALSE}
+ts.plot(BeerProduction, xlim = c(100,length(Beer)+12), ylim = c(250,max(U)), col="red")
+lines(U, col="blue", lty="dashed")
+lines(L, col="blue", lty="dashed")
+points((length(Beer)+1):(length(Beer)+12), pred.orig, col="green")
+points((length(Beer)+1):(length(Beer)+12), pred.orig, col="black")
+```
+
+Initially, we had split the dataset into a training and test set. The test set contained the last 12 observations. Here we see that the test set are within the prediction intervals therefore, we state that this forecast is valid. Here from the forecasts, we see that the Australian beer industry will continue to maintain and maybe even increase the amount of production of beer.  
+
+\newpage
+
+## Conclusion
+
+In conclusion, with the use of transformations, differencing, and diagnostic testing, we are able to determine that model SARIMA(1,1,1)(0,1,2)s=4 was the best model to forecast the given time series dataset. Its formula is given as : $\nabla_1\nabla_4ln(U_t)(1+0.4085B) = Z_t(1-0.5325B)(1-0.7249B^4)$. The main objective of this project was to forecast the amount beer production in Australia in order to determine whether the Australian beer industry will continue to have a positive impact on the economy. With the given forecast, I was able to determine that the Australia's beer industry will either continue to increase or maintain production which will in return have a positive impact on Australia's economy since it plays a huge role in it. This is because from the forecast we see that the 95% confidence interval on average actually increases in value the later the data, meaning that the beer production will either increase or maintain over large periods of time. 
+
+
+## References
+
+Australian Bureau of Statistics
+
+ACIL Allen Consulting, Economic Contribution of the Australian Brewing Industry 2018-19 from Producers to Consumers, March 2020
+
+## Appendix
+
+
+# Initializiation of Library
+
+```{r, echo = FALSE, results="hide", warning=FALSE,message=FALSE}
+setwd('/Users/minhpham/Rstudio PSTAT')
+library(tsdl)
+library(MASS)
+library(ggplot2)
+library(ggfortify)
+library(forecast)
+source("plot.roots.R")
+```
+
+# Training / Test Split
+```{r, echo = TRUE, results="hide", warning=FALSE, message=FALSE, fig.show="hide"}
+BeerProduction <- tsdl[[99]]
+length(BeerProduction) # 154 obs
+BeerProduction = BeerProduction[c(1:154)]
+Beer = BeerProduction[c(1:142)] # train set with 154 - 12 obs
+Beer.test = BeerProduction[c(143:154)] # test set wtih 12 obs
+```
+
+# Plot time series and ACF / PACF
+
+```{r, echo = TRUE, results = "hide", fig.show="hide"}
+par(mfrow=c(1,2))
+Beer.ts = ts(Beer, frequency = 4, start = c(1956,1))
+plot.ts(Beer.ts)
+hist(Beer.ts) #histogram is slightly skewed so we try transformations 
+Acf(Beer.ts, lag.max = 40)
+Pacf(Beer.ts, lag.max = 40)
+```
+
+# Decomposition
+
+```{r, echo = TRUE, results = "hide", fig.show="hide"}
+y <- ts(as.ts(Beer), frequency = 4)
+decomp <- decompose(y)
+plot(decomp) # there is a trend + seasonal component
+```
+
+# Transformations + Looking at variance 
+
+```{r, echo = TRUE, results="hide", fig.show="hide"}
+bcTransform <- boxcox(Beer~ as.numeric(1:length(Beer.ts))) 
+lambda <- bcTransform$x[which(bcTransform$y == max(bcTransform$y))]
+Beer.bc <-  (1/lambda)*(Beer^lambda-1)
+beer.log <- log(Beer)
+par(mfrow=c(1,3))
+hist(beer.log)
+hist(Beer.bc)
+hist(Beer.ts)
+print(paste0('beer.log var : ', var(beer.log)))
+print(paste0('beer.bc var : ', var(Beer.bc)))
+print(paste0('beer.ts var : ', var(Beer.ts)))
+# original log b/c variance is significantly lower
+```
+
+# Differencing + Looking at variance 
+
+```{r, echo = TRUE, results = "hide", fig.show="hide"}
+# remove seasonality
+Beer.d4 <- diff(beer.log, 4)
+print(paste0('beer differenced at lag 4 once var : ', var(Beer.d4)))
+Beer.d42 <- diff(Beer.d4, 4)
+print(paste0('beer differenced at lag 4 twice var : ', var(Beer.d42)))
+Beer.d4d1 <- diff(Beer.d4, 1)
+print(paste0('beer differenced at lag 4 once and lag 1 once : ', var(Beer.d4d1)))
+Beer.d4d2 <- diff(Beer.d4d1,1)
+print(paste0('beer differenced at lag 4 once and lag 1 twice : ', var(Beer.d4d2)))
+```
+
+# Acf and Pacf of differenced model
+```{r, echo = TRUE, results = "hide", fig.show="hide"}
+par(mfrow = c(1,2))
+Acf(Beer.d4d1, lag.max = 40)
+Pacf(Beer.d4d1, lag.max = 40)
+```
+
+# Comparing AIC of different models
+```{r, echo = TRUE, results = "hide", fig.show="hide"}
+arima(beer.log, order=c(1,1,1), seasonal = list(order = c(0,1,2), period = 4), method="ML")
+# - 503.88 
+arima(beer.log, order=c(2,1,1), seasonal = list(order = c(0,1,2), period = 4), method="ML")
+# - 504.93
+arima(beer.log, order=c(5,1,1), seasonal = list(order = c(0,1,2), period = 4), method="ML")
+# - 499.87
+arima(beer.log, order=c(6,1,1), seasonal = list(order = c(0,1,2), period = 4), method="ML")
+# - 501.59
+arima(beer.log, order=c(7,1,1), seasonal = list(order = c(0,1,2), period = 4), method="ML")
+# - 498.35
+arima(beer.log, order=c(8,1,1), seasonal = list(order = c(0,1,2), period = 4), method="ML")
+# -498.64
+arima(beer.log, order=c(1,1,3), seasonal = list(order = c(0,1,2), period = 4), method="ML")
+# - 502.69
+arima(beer.log, order=c(2,1,3), seasonal = list(order = c(0,1,2), period = 4), method="ML")
+# - 503.12
+arima(beer.log, order=c(5,1,3), seasonal = list(order = c(0,1,2), period = 4), method="ML")
+# - 498.82
+arima(beer.log, order=c(6,1,3), seasonal = list(order = c(0,1,2), period = 4), method="ML")
+# - 497.59
+arima(beer.log, order=c(7,1,3), seasonal = list(order = c(0,1,2), period = 4), method="ML")
+# - 496.41
+arima(beer.log, order=c(8,1,3), seasonal = list(order = c(0,1,2), period = 4), method="ML")
+# - 503.42
+```
+
+# Removing components that have 0 within confidence interval
+```{r, echo = TRUE, results = "hide", fig.show="hide"}
+arima(beer.log, order=c(2,1,1), seasonal = list(order = c(0,1,2), period = 4), method="ML")
+# get rid of ar2 sma 2 and ma 1
+arima(beer.log, order=c(2,1,1), seasonal = list(order = c(0,1,2), period = 4), fixed = c(NA,0,0,NA,0), method="ML")
+
+arima(beer.log, order=c(1,1,1), seasonal = list(order = c(0,1,2), period = 4), method="ML")
+# get rid of sma2
+arima(beer.log, order=c(1,1,1), seasonal = list(order = c(0,1,2), period = 4), fixed = c(NA,NA,NA,0), method="ML")
+
+```
+
+# Checking for roots 
+```{r, echo = TRUE, results= "hide", fig.show="hide"}
+
+# SARIMA(2,1,1)(0,1,2)s=4
+
+plot.roots(NULL,polyroot(c(1, 0.6835, 0.2851)), main="roots of AR part, nonseasonal")
+print(paste0('root of MA part, nonseasonal : ', polyroot(c(1,-0.2875))))
+print(paste0('root of MA part, seasonal : ', polyroot(c(1,-0.6359,-0.1211))))
+
+## all outside unit circle therefore, Model A is invertible + stationary
+
+# SARIMA(1,1,1)(0,1,2)s=4
+print(paste0('root of AR part, nonseasonal : ', polyroot(c(1,0.4085))))
+plot.roots(NULL,polyroot(c(1,0.5325)), main= 'roots of MA part, nonseasonal')
+plot.roots(NULL,polyroot(c(1,-0.7249)), main= 'roots of MA part, seasonal')
+## stationary + invertible
+```
+
+
+# Diagnostic testing Model A:
+
+```{r, echo = TRUE, results = "hide", fig.show="hide"}
+fit <- arima(beer.log, order=c(2,1,1), seasonal = list(order = c(0,1,2), period = 4), method="ML")
+res <- residuals(fit)
+plot.ts(res)
+fitt <- lm(res ~ as.numeric(1:length(res))); abline(fitt, col="red")
+abline(h=mean(res), col="blue")
+par(mfrow = c(1,2))
+
+hist(res,density=20,breaks=20, col="blue", xlab="", prob=TRUE)
+m <- mean(res)
+std <- sqrt(var(res))
+curve( dnorm(x,m,std), add=TRUE )
+qqnorm(res,main= "Normal Q-Q Plot for Model B")
+qqline(res,col="blue")
+
+par(mfrow = c(1,2))
+Acf(res, lag.max = 40)
+Pacf(res, lag.max = 40)
+
+shapiro.test(res)
+Box.test(res, lag = 12, type = c("Box-Pierce"), fitdf = 2)
+Box.test(res, lag = 12, type = c("Ljung-Box"), fitdf = 2)
+Box.test((res)^2, lag = 12, type = c("Ljung-Box"), fitdf = 0)
+```
+
+
+# Diagnostic testing Model B:
+```{r, echo = TRUE, results = "hide",fig.show="hide"}
+fit <- arima(beer.log, order=c(1,1,1), seasonal = list(order = c(0,1,2), period = 4), fixed = c(NA,NA,NA,0), method="ML")
+res <- residuals(fit)
+
+plot.ts(res)
+fitt <- lm(res ~ as.numeric(1:length(res))); abline(fitt, col="red")
+abline(h=mean(res), col="blue")
+
+
+par(mfrow = c(1,2))
+
+hist(res,density=20,breaks=20, col="blue", xlab="", prob=TRUE)
+m <- mean(res)
+std <- sqrt(var(res))
+curve( dnorm(x,m,std), add=TRUE )
+abline(h=mean(res), col="blue")
+qqnorm(res,main= "Normal Q-Q Plot for Model B")
+qqline(res,col="blue")
+
+par(mfrow = c(1,2))
+Acf(res, lag.max = 40)
+Pacf(res, lag.max = 40)
+
+shapiro.test(res)
+Box.test(res, lag = 12, type = c("Box-Pierce"), fitdf = 4)
+Box.test(res, lag = 12, type = c("Ljung-Box"), fitdf = 4)
+Box.test(res^2, lag = 12, type = c("Ljung-Box"), fitdf = 0)
+```
+
+# Forecasting model B
+```{r, echo = TRUE, results = "hide",fig.show="hide"}
+fit.A <- arima(beer.log, order=c(1,1,1), seasonal = list(order = c(0,1,2), period = 4), fixed = c(NA,NA,NA,0), method="ML")
+pred.tr <- predict(fit.A, n.ahead = 12)
+U.tr= pred.tr$pred + 2*pred.tr$se # upper bound for prediction
+L.tr= pred.tr$pred - 2*pred.tr$se # lower bound
+ts.plot(beer.log, xlim=c(1,length(beer.log)+12), ylim = c(min(beer.log),max(U.tr)))
+lines(U.tr, col="blue", lty="dashed")
+lines(L.tr, col="blue", lty="dashed")
+points((length(beer.log)+1):(length(beer.log)+12), pred.tr$pred, col="red")
+
+
+pred.orig <- exp(pred.tr$pred)
+U= exp(U.tr)
+L= exp(L.tr)
+ts.plot(Beer, xlim=c(1,length(Beer)+12), ylim = c(min(Beer),max(U)))
+lines(U, col="blue", lty="dashed")
+lines(L, col="blue", lty="dashed")
+points((length(Beer)+1):(length(Beer)+12), pred.orig, col="red")
+
+
+ts.plot(Beer, xlim = c(100,length(Beer)+12), ylim = c(250,max(U)))
+lines(U, col="blue", lty="dashed")
+lines(L, col="blue", lty="dashed")
+points((length(Beer)+1):(length(Beer)+12), pred.orig, col="red")
+
+
+ts.plot(BeerProduction, xlim = c(100,length(Beer)+12), ylim = c(250,max(U)), col="red")
+lines(U, col="blue", lty="dashed")
+lines(L, col="blue", lty="dashed")
+points((length(Beer)+1):(length(Beer)+12), pred.orig, col="green")
+points((length(Beer)+1):(length(Beer)+12), pred.orig, col="black")
+```
